@@ -23,6 +23,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "procfs.h"
 #include "ptrace.h"
 
 static const struct option long_options[] = {
@@ -92,6 +93,20 @@ int main(int argc, char *argv[])
 		goto out;
 
 	printf("[+] attached\n");
+
+	struct library libc;
+
+	printf("[-] locating and mapping libc...\n");
+
+	err = map_remote_library(target, "libc", &libc);
+	if (err < 0)
+		goto detach;
+
+	printf("[+] found %d libc regions\n", libc.region_count);
+
+	printf("[-] unmapping libc...\n");
+
+	unmap_remote_library(&libc);
 
 detach:
 	printf("[-] detaching from process %d...\n", target);
