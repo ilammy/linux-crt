@@ -7,6 +7,7 @@ CFLAGS += -std=c11 -D_GNU_SOURCE
 target = inject-thread
 
 objects += inject-thread.o
+objects += ptrace.o
 
 all: $(target)
 

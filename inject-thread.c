@@ -23,6 +23,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "ptrace.h"
+
 static const struct option long_options[] = {
 	{ .name = "help",    .has_arg = 0, .val = 'h'},
 	{ .name = "target",  .has_arg = 1, .val = 't'},
@@ -49,6 +51,7 @@ static void usage(const char *name)
 int main(int argc, char *argv[])
 {
 	int opt;
+	int err;
 	pid_t target = 0;
 	char payload[1024] = {0};
 	char entry[1024] = {0};
@@ -82,5 +85,20 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	return 0;
+	printf("[-] attaching to process %d...\n", target);
+
+	err = ptrace_attach(target);
+	if (err)
+		goto out;
+
+	printf("[+] attached\n");
+
+detach:
+	printf("[-] detaching from process %d...\n", target);
+
+	err = ptrace_detach(target);
+
+	printf("[+] we're done\n");
+out:
+	return err ? 2 : 0;
 }
