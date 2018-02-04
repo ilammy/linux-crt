@@ -18,9 +18,69 @@
  * Boston, MA 02110-1301 USA.
  */
 
+#include <getopt.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+static const struct option long_options[] = {
+	{ .name = "help",    .has_arg = 0, .val = 'h'},
+	{ .name = "target",  .has_arg = 1, .val = 't'},
+	{ .name = "payload", .has_arg = 1, .val = 'p'},
+	{ .name = "entry",   .has_arg = 1, .val = 'e'},
+};
+
+static void usage(const char *name)
+{
+	printf(
+	"Usage:\n"
+	"    %s [option]...\n"
+	"\n"
+	"Options:\n"
+	"    --target  <PID>                 PID of the target process\n"
+	"    --payload <path/to/payload.so>  payload shared object to inject\n"
+	"    --entry   <entry_point>         name of the function in the payload\n"
+	"\n"
+	"All options are required and must be specified.\n"
+	"\n",
+	name);
+}
 
 int main(int argc, char *argv[])
 {
+	int opt;
+	pid_t target = 0;
+	char payload[1024] = {0};
+	char entry[1024] = {0};
+
+	while ((opt = getopt_long(argc, argv, "h", long_options, NULL)) != -1) {
+		switch (opt) {
+		case 'h':
+			usage(argv[0]);
+			return 0;
+
+		case 't':
+			target = atoi(optarg);
+			break;
+
+		case 'p':
+			strncpy(payload, optarg, sizeof(payload) - 1);
+			break;
+
+		case 'e':
+			strncpy(entry, optarg, sizeof(entry) - 1);
+			break;
+
+		default:
+			usage(argv[0]);
+			return 1;
+		}
+	}
+
+	if (!target || !payload[0] || !entry[0]) {
+		usage(argv[0]);
+		return 1;
+	}
+
 	return 0;
 }
