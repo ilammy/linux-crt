@@ -23,6 +23,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "elf.h"
 #include "procfs.h"
 #include "ptrace.h"
 
@@ -104,6 +105,17 @@ int main(int argc, char *argv[])
 
 	printf("[+] found %d libc regions\n", libc.region_count);
 
+	printf("[-] locating dynamic symbol table of libc...\n");
+
+	struct symbol_table *libc_symbols = find_dynamic_symbol_table(&libc);
+	if (!libc_symbols)
+		goto unmap_libc;
+
+	printf("[+] found dynamic symbol table\n");
+
+	free_symbol_table(libc_symbols);
+
+unmap_libc:
 	printf("[-] unmapping libc...\n");
 
 	unmap_remote_library(&libc);

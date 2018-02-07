@@ -9,6 +9,7 @@ target = inject-thread
 objects += inject-thread.o
 objects += procfs.o
 objects += ptrace.o
+objects += elf.o
 
 all: $(target)
 
