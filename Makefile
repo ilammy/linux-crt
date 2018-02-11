@@ -10,6 +10,7 @@ objects += inject-thread.o
 objects += procfs.o
 objects += ptrace.o
 objects += elf.o
+objects += syscall.o
 
 all: $(target)
 

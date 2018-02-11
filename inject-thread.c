@@ -26,6 +26,7 @@
 #include "elf.h"
 #include "procfs.h"
 #include "ptrace.h"
+#include "syscall.h"
 
 static const struct option long_options[] = {
 	{ .name = "help",    .has_arg = 0, .val = 'h'},
@@ -124,6 +125,14 @@ int main(int argc, char *argv[])
 
 	printf("[+] resolved __libc_dlopen_mode(): %lx\n", dlopen);
 	printf("[+] resolved __libc_dlsym(): %lx\n", dlsym);
+
+	printf("[-] locating SYSCALL instruction in libc...\n");
+
+	unsigned long syscall_vaddr = find_syscall_instruction(&libc);
+	if (!syscall_vaddr)
+		goto free_symbols;
+
+	printf("[+] found SYSCALL instruction at %lx\n", syscall_vaddr);
 
 free_symbols:
 	free_symbol_table(libc_symbols);
