@@ -20,10 +20,16 @@
 
 #include "syscall.h"
 
+#include <errno.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <string.h>
+
+#include <sys/syscall.h>
 
 #include "procfs.h"
+#include "ptrace.h"
 
 unsigned long find_syscall_instruction(struct library *library)
 {
@@ -51,4 +57,115 @@ unsigned long find_syscall_instruction(struct library *library)
 	fprintf(stderr, "[*] can't find a SYSCALL instruction\n");
 
 	return 0;
+}
+
+static int set_regs_for_syscall(struct user_regs_struct *registers,
+		unsigned long syscall_insn_vaddr,
+		long syscall_number, int args_count, va_list args)
+{
+	registers->rip = syscall_insn_vaddr;
+	registers->rax = syscall_number;
+
+	for (int i = 0; i < args_count; i++) {
+		switch (i) {
+		case 0:
+			registers->rdi = va_arg(args, long);
+			break;
+		case 1:
+			registers->rsi = va_arg(args, long);
+			break;
+		case 2:
+			registers->rdx = va_arg(args, long);
+			break;
+		case 3:
+			registers->r10 = va_arg(args, long);
+			break;
+		case 4:
+			registers->r8 = va_arg(args, long);
+			break;
+		case 5:
+			registers->r9 = va_arg(args, long);
+			break;
+		default:
+			fprintf(stderr, "[*] too many syscall arguments: %d\n",
+				args_count);
+			return -E2BIG;
+		}
+	}
+
+	return 0;
+}
+
+static long perform_syscall(pid_t pid, unsigned long syscall_insn_vaddr,
+		long syscall_number, int args_count, ...)
+{
+	int err;
+	struct user_regs_struct old_registers;
+	struct user_regs_struct new_registers;
+
+	err = get_registers(pid, &old_registers);
+	if (err)
+		return err;
+
+	new_registers = old_registers;
+
+	va_list args;
+	va_start(args, args_count);
+	err = set_regs_for_syscall(&new_registers, syscall_insn_vaddr,
+		syscall_number, args_count, args);
+	va_end(args);
+	if (err)
+		return err;
+
+	err = set_registers(pid, &new_registers);
+	if (err)
+		return err;
+
+	err = wait_for_syscall_completion(pid);
+	if (err)
+		return err;
+
+	err = get_registers(pid, &new_registers);
+	if (err)
+		return err;
+
+	long result = new_registers.rax;
+
+	err = set_registers(pid, &old_registers);
+	if (err)
+		return err;
+
+	return result;
+}
+
+unsigned long remote_mmap(pid_t pid, unsigned long syscall_insn_vaddr,
+		unsigned long addr, size_t length, int prot, int flags,
+		int fd, off_t offset)
+{
+	long ret = perform_syscall(pid, syscall_insn_vaddr,
+		__NR_mmap, 6, (long) addr, (long) length, (long) prot,
+		(long) flags, (long) fd, (long) offset);
+
+	if (-4096 < ret && ret < 0) {
+		fprintf(stderr, "[*] remote mmap() in %d failed: %s\n",
+			pid, strerror(-ret));
+		ret = 0;
+	}
+
+	return ret;
+}
+
+int remote_mprotect(pid_t pid, unsigned long syscall_insn_vaddr,
+		unsigned long addr, size_t len, int prot)
+{
+	long ret = perform_syscall(pid, syscall_insn_vaddr,
+		__NR_mprotect, 3, (long) addr, (long) len, (long) prot);
+
+	if (ret < 0) {
+		fprintf(stderr, "[*] remote mprotect() in %d failed: %s\n",
+			pid, strerror(-ret));
+		ret = -1;
+	}
+
+	return ret;
 }

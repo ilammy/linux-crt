@@ -107,3 +107,91 @@ int ptrace_detach(pid_t pid)
 
 	return 0;
 }
+
+int get_registers(pid_t pid, struct user_regs_struct *registers)
+{
+	int err = 0;
+	if (ptrace(PTRACE_GETREGS, pid, registers, registers) < 0) {
+		err = -errno;
+		fprintf(stderr, "[!] failed to get registers of %d: %s\n",
+			pid, strerror(errno));
+	}
+	return err;
+}
+
+int set_registers(pid_t pid, struct user_regs_struct *registers)
+{
+	int err = 0;
+	if (ptrace(PTRACE_SETREGS, pid, registers, registers) < 0) {
+		err = -errno;
+		fprintf(stderr, "[!] failed to set registers of %d: %s\n",
+			pid, strerror(errno));
+	}
+	return err;
+}
+
+static int wait_for_syscall_enter_exit_stop(pid_t pid)
+{
+	int err = 0;
+
+	if (ptrace(PTRACE_SYSCALL, pid, 0, 0) < 0) {
+		err = -errno;
+		fprintf(stderr, "[!] failed to wait for syscall by %d: %s\n",
+			pid, strerror(errno));
+		goto out;
+	}
+
+	for (;;) {
+		int status;
+
+		if (waitpid(pid, &status, 0) < 0) {
+			err = -errno;
+			fprintf(stderr, "[!] failed to wait for %d: %s\n",
+				pid, strerror(errno));
+			goto out;
+		}
+
+		if (WIFSIGNALED(status) || WIFEXITED(status)) {
+			err = -ECHILD;
+			fprintf(stderr, "[!] %d is already dead\n", pid);
+			goto out;
+		}
+
+		if (WIFSTOPPED(status)) {
+			int signal = WSTOPSIG(status);
+
+			if (signal == SIGTRAP | 0x80)
+				break;
+		}
+
+		/*
+		 * This never happens. PTRACE_SYSCALL stops only in the
+		 * following caseS:
+		 * - SIGKILL of the target process
+		 * - PTRACE_EVENT which we don't use
+		 * - SIGTRAP on syscall completion
+		 */
+		err = -EINVAL;
+		fprintf(stderr, "[*] unexpected result of waitpid: %d\n",
+			status);
+		goto out;
+	}
+out:
+	return err;
+}
+
+int wait_for_syscall_completion(pid_t pid)
+{
+	int err;
+	/*
+	 * We need to wait twice: first for the entry into the syscall,
+	 * then again for the exit from it.
+	 */
+	err = wait_for_syscall_enter_exit_stop(pid);
+	if (err)
+		goto out;
+
+	err = wait_for_syscall_enter_exit_stop(pid);
+out:
+	return err;
+}

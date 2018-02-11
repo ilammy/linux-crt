@@ -134,6 +134,40 @@ int main(int argc, char *argv[])
 
 	printf("[+] found SYSCALL instruction at %lx\n", syscall_vaddr);
 
+	struct user_regs_struct registers;
+
+	printf("[-] saving the registers before injection...\n");
+
+	err = get_registers(target, &registers);
+	if (err)
+		goto free_symbols;
+
+	printf("[-] mapping a memory page for the shellcode...\n");
+
+	unsigned long shellcode_vaddr =
+		remote_mmap(target, syscall_vaddr, 0, 4096,
+			PROT_READ | PROT_WRITE | PROT_EXEC,
+			MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+
+	if (!shellcode_vaddr)
+		goto restore_regs;
+
+	printf("[+] mapped a page for shellcode at %lx\n", shellcode_vaddr);
+
+	printf("[-] removing write access to shellcode...\n");
+
+	err = remote_mprotect(target, syscall_vaddr, shellcode_vaddr, 4096,
+		PROT_READ | PROT_EXEC);
+	if (err < 0)
+		goto restore_regs;
+
+	printf("[+] shellcode ready\n");
+
+restore_regs:
+	printf("[-] restoring the registers after injection...\n");
+
+	set_registers(target, &registers);
+
 free_symbols:
 	free_symbol_table(libc_symbols);
 
