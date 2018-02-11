@@ -23,6 +23,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <elf.h>
 
 #include "procfs.h"
@@ -423,4 +424,86 @@ struct symbol_table* find_dynamic_symbol_table(struct library *mapping)
 void free_symbol_table(struct symbol_table *table)
 {
 	free(table);
+}
+
+static Elf64_Word elf_hash(const char *name)
+{
+	Elf64_Word h = 0;
+	
+	while (*name) {
+		h = (h << 4) + *name++;
+	
+		Elf64_Word g = h & 0xF0000000;
+
+		if (g)
+			h ^= g >> 24;
+	
+		h &= ~g;
+	}
+
+	return h;
+}
+
+static const char* symbol_name(const Elf64_Sym *symbol,
+		struct symbol_table *symbols)
+{
+	if (!symbol->st_name)
+		return "";
+
+	return &symbols->dynstr.strings[symbol->st_name];
+}
+
+static unsigned long symbol_address(const char *name,
+		const Elf64_Sym *symbol, struct symbol_table *symbols)
+{
+	uint8_t bind = ELF64_ST_BIND(symbol->st_info);
+	uint8_t type = ELF64_ST_TYPE(symbol->st_info);
+
+	if (symbol->st_shndx == STN_UNDEF) {
+		fprintf(stderr, "[!] undefined symbol: %s\n", name);
+		return 0;
+	}
+
+	if ((bind != STB_GLOBAL) && (bind != STB_WEAK)) {
+		fprintf(stderr, "[!] local symbol: %s\n", name);
+		return 0;
+	}
+
+	if ((type != STT_FUNC) && (type != STT_OBJECT)) {
+		fprintf(stderr, "[!] not a runtime object: %s\n", name);
+		return 0;
+	}
+
+	return symbols->base_vaddr + symbol->st_value;
+}
+
+unsigned long resolve_symbol(const char *name, struct symbol_table *symbols)
+{
+	Elf64_Word nbucket = symbols->hash.table->nbucket;
+	const Elf64_Word *buckets = &symbols->hash.table->entries[0];
+	const Elf64_Word *chains = &symbols->hash.table->entries[nbucket];
+
+	Elf64_Word hash = elf_hash(name);
+	Elf64_Word bucket = hash % nbucket;
+	Elf64_Word index = buckets[bucket];
+	
+	for (;;) {
+		if (index > symbols->dynsym.count) {
+			fprintf(stderr, "[*] invalid hash index: %d (> %ld)\n",
+				index, symbols->dynsym.count);
+			return 0;
+		}
+
+		const Elf64_Sym *symbol = &symbols->dynsym.symbols[index];
+
+		if (strcmp(symbol_name(symbol, symbols), name) == 0)
+			return symbol_address(name, symbol, symbols);
+	
+		index = chains[index];
+
+		if (index == STN_UNDEF) {
+			fprintf(stderr, "[!] symbol not found: %s\n", name);
+			return 0;
+		}
+	}
 }

@@ -113,6 +113,19 @@ int main(int argc, char *argv[])
 
 	printf("[+] found dynamic symbol table\n");
 
+	printf("[-] resolving necessary symbols from libc...\n");
+
+	unsigned long dlopen =
+		resolve_symbol("__libc_dlopen_mode", libc_symbols);
+	unsigned long dlsym =
+		resolve_symbol("__libc_dlsym", libc_symbols);
+	if (!dlopen || !dlsym)
+		goto free_symbols;
+
+	printf("[+] resolved __libc_dlopen_mode(): %lx\n", dlopen);
+	printf("[+] resolved __libc_dlsym(): %lx\n", dlsym);
+
+free_symbols:
 	free_symbol_table(libc_symbols);
 
 unmap_libc:

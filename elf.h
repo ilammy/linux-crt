@@ -42,4 +42,14 @@ struct symbol_table* find_dynamic_symbol_table(struct library *mapping);
  */
 void free_symbol_table(struct symbol_table *table);
 
+/**
+ * resolve_symbol() - resolve a remote symbol
+ * @name:  symbol name to resolve
+ * @table: symbol table to use
+ *
+ * Returns: virtual address of the requested symbol, or zero if the symbol
+ * could not be resolved.
+ */
+unsigned long resolve_symbol(const char *name, struct symbol_table *table);
+
 #endif /* LINUX_CRT_ELF_H */
