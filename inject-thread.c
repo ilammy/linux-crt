@@ -243,56 +243,18 @@ static int inject_thread()
 	if (err)
 		goto detach;
 
-	struct library libc;
-
-	printf("[-] locating and mapping libc...\n");
-
-	err = map_remote_library(target, "libc", &libc);
-	if (err < 0)
-		goto detach;
-
-	printf("[+] found %d libc regions\n", libc.region_count);
-
-	printf("[-] locating dynamic symbol table of libc...\n");
-
-	struct symbol_table *libc_symbols = find_dynamic_symbol_table(&libc);
-	if (!libc_symbols)
-		goto unmap_libc;
-
-	printf("[+] found dynamic symbol table\n");
-
-	printf("[-] resolving necessary symbols from libc...\n");
-
-	unsigned long dlopen =
-		resolve_symbol("__libc_dlopen_mode", libc_symbols);
-	unsigned long dlsym =
-		resolve_symbol("__libc_dlsym", libc_symbols);
-	if (!dlopen || !dlsym)
-		goto free_symbols;
-
-	printf("[+] resolved __libc_dlopen_mode(): %lx\n", dlopen);
-	printf("[+] resolved __libc_dlsym(): %lx\n", dlsym);
-
-	printf("[-] locating SYSCALL instruction in libc...\n");
-
-	unsigned long syscall_vaddr = find_syscall_instruction(&libc);
-	if (!syscall_vaddr)
-		goto free_symbols;
-
-	printf("[+] found SYSCALL instruction at %lx\n", syscall_vaddr);
-
 	struct user_regs_struct registers;
 
 	printf("[-] saving the registers before injection...\n");
 
 	err = get_registers(target, &registers);
 	if (err)
-		goto free_symbols;
+		goto detach;
 
 	printf("[-] mapping a memory page for the shellcode...\n");
 
 	unsigned long shellcode_vaddr =
-		remote_mmap(target, syscall_vaddr, 0, 4096,
+		remote_mmap(target, syscall_ret_vaddr, 0, 4096,
 			PROT_READ | PROT_WRITE | PROT_EXEC,
 			MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
 
@@ -303,7 +265,7 @@ static int inject_thread()
 
 	printf("[-] removing write access to shellcode...\n");
 
-	err = remote_mprotect(target, syscall_vaddr, shellcode_vaddr, 4096,
+	err = remote_mprotect(target, syscall_ret_vaddr, shellcode_vaddr, 4096,
 		PROT_READ | PROT_EXEC);
 	if (err < 0)
 		goto restore_regs;
@@ -314,14 +276,6 @@ restore_regs:
 	printf("[-] restoring the registers after injection...\n");
 
 	set_registers(target, &registers);
-
-free_symbols:
-	free_symbol_table(libc_symbols);
-
-unmap_libc:
-	printf("[-] unmapping libc...\n");
-
-	unmap_remote_library(&libc);
 
 detach:
 	printf("[-] detaching from process %d...\n", target);
