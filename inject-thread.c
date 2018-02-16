@@ -51,13 +51,15 @@ static void usage(const char *name)
 	name);
 }
 
+static pid_t target;
+static char payload[256];
+static char entry[256];
+
+static int inject_thread(void);
+
 int main(int argc, char *argv[])
 {
 	int opt;
-	int err;
-	pid_t target = 0;
-	char payload[1024] = {0};
-	char entry[1024] = {0};
 
 	while ((opt = getopt_long(argc, argv, "h", long_options, NULL)) != -1) {
 		switch (opt) {
@@ -87,6 +89,13 @@ int main(int argc, char *argv[])
 		usage(argv[0]);
 		return 1;
 	}
+
+	return inject_thread() ? 2 : 0;
+}
+
+static int inject_thread()
+{
+	int err;
 
 	printf("[-] attaching to process %d...\n", target);
 
