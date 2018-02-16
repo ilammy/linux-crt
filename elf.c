@@ -112,8 +112,10 @@ static bool valid_elf_header(const Elf64_Ehdr *ehdr)
 		return false;
 	}
 
-	if (ehdr->e_ident[EI_OSABI] != ELFOSABI_LINUX) {
-		fprintf(stderr, "[!] non-Linux ELF image: %d\n",
+	if ((ehdr->e_ident[EI_OSABI] != ELFOSABI_LINUX) &&
+	    (ehdr->e_ident[EI_OSABI] != ELFOSABI_NONE))
+	{
+		fprintf(stderr, "[!] unsupported OS ABI: %d\n",
 			ehdr->e_ident[EI_OSABI]);
 		return false;
 	}

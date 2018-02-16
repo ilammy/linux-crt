@@ -55,6 +55,9 @@ static pid_t target;
 static char payload[256];
 static char entry[256];
 
+static unsigned long dlopen_vaddr;
+static unsigned long dlsym_vaddr;
+
 static int inject_thread(void);
 
 int main(int argc, char *argv[])
@@ -93,6 +96,50 @@ int main(int argc, char *argv[])
 	return inject_thread() ? 2 : 0;
 }
 
+static int resolve_libdl_symbols()
+{
+	int err = 0;
+	struct library libdl;
+
+	printf("[-] locating and mapping libdl...\n");
+
+	err = map_remote_library(target, "/libdl-", &libdl);
+	if (err < 0)
+		goto out;
+
+	printf("[+] mapped %d regions\n", libdl.region_count);
+
+	printf("[-] locating dynamic symbol table of libdl...\n");
+
+	struct symbol_table *symbols = find_dynamic_symbol_table(&libdl);
+	if (!symbols) {
+		err = -1;
+		goto unmap;
+	}
+
+	printf("[+] found dynamic symbol table\n");
+
+	printf("[-] resolving symbols from libdl...\n");
+
+	dlopen_vaddr  = resolve_symbol("dlopen",  symbols);
+	dlsym_vaddr   = resolve_symbol("dlsym",   symbols);
+
+	if (!dlopen_vaddr || !dlsym_vaddr) {
+		err = -1;
+		goto free_symbols;
+	}
+
+	printf("[+] resolved dlopen():  %lx\n", dlopen_vaddr);
+	printf("[+] resolved dlsym():   %lx\n", dlsym_vaddr);
+
+free_symbols:
+	free_symbol_table(symbols);
+unmap:
+	unmap_remote_library(&libdl);
+out:
+	return err;
+}
+
 static int inject_thread()
 {
 	int err;
@@ -104,6 +151,10 @@ static int inject_thread()
 		goto out;
 
 	printf("[+] attached\n");
+
+	err = resolve_libdl_symbols();
+	if (err)
+		goto detach;
 
 	struct library libc;
 
