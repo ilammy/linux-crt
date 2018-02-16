@@ -61,6 +61,8 @@ static unsigned long dlsym_vaddr;
 static unsigned long pthread_create_vaddr;
 static unsigned long pthread_detach_vaddr;
 
+static unsigned long syscall_ret_vaddr;
+
 static int inject_thread(void);
 
 int main(int argc, char *argv[])
@@ -187,6 +189,36 @@ out:
 	return err;
 }
 
+static int locate_syscall_trampoline()
+{
+	int err = 0;
+	struct library libc;
+
+	printf("[-] locating and mapping libc...\n");
+
+	err = map_remote_library(target, "/libc-", &libc);
+	if (err < 0)
+		goto out;
+
+	printf("[+] mapped %d regions\n", libc.region_count);
+
+	printf("[-] locating SYSCALL instruction in libc...\n");
+
+	syscall_ret_vaddr = find_syscall_instruction(&libc);
+
+	if (!syscall_ret_vaddr) {
+		err = -1;
+		goto unmap;
+	}
+
+	printf("[+] found SYSCALL instruction at %lx\n", syscall_ret_vaddr);
+
+unmap:
+	unmap_remote_library(&libc);
+out:
+	return err;
+}
+
 static int inject_thread()
 {
 	int err;
@@ -204,6 +236,10 @@ static int inject_thread()
 		goto detach;
 
 	err = resolve_libpthread_symbols();
+	if (err)
+		goto detach;
+
+	err = locate_syscall_trampoline();
 	if (err)
 		goto detach;
 

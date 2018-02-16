@@ -42,12 +42,17 @@ unsigned long find_syscall_instruction(struct library *library)
 		const uint8_t *region_data = region->content;
 		size_t region_size = region->vaddr_high - region->vaddr_low;
 
-		if (region_size < 2)
+		if (region_size < 3)
 			continue;
 
+		/*
+		 * 0F 05 syscall
+		 * C3    retq
+		 */
 		for (size_t offset = 0; offset < region_size - 1; offset++) {
 			if (region_data[offset + 0] == 0x0F &&
-			    region_data[offset + 1] == 0x05)
+			    region_data[offset + 1] == 0x05 &&
+			    region_data[offset + 2] == 0xC3)
 			{
 				return region->vaddr_low + offset;
 			}
