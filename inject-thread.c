@@ -58,6 +58,9 @@ static char entry[256];
 static unsigned long dlopen_vaddr;
 static unsigned long dlsym_vaddr;
 
+static unsigned long pthread_create_vaddr;
+static unsigned long pthread_detach_vaddr;
+
 static int inject_thread(void);
 
 int main(int argc, char *argv[])
@@ -140,6 +143,50 @@ out:
 	return err;
 }
 
+static int resolve_libpthread_symbols()
+{
+	int err = 0;
+	struct library libpthread;
+
+	printf("[-] locating and mapping libpthread...\n");
+
+	err = map_remote_library(target, "/libpthread-", &libpthread);
+	if (err < 0)
+		goto out;
+
+	printf("[+] mapped %d regions\n", libpthread.region_count);
+
+	printf("[-] locating dynamic symbol table of libpthread...\n");
+
+	struct symbol_table *symbols = find_dynamic_symbol_table(&libpthread);
+	if (!symbols) {
+		err = -1;
+		goto unmap;
+	}
+
+	printf("[+] found dynamic symbol table\n");
+
+	printf("[-] resolving symbols from libpthread...\n");
+
+	pthread_create_vaddr = resolve_symbol("pthread_create", symbols);
+	pthread_detach_vaddr = resolve_symbol("pthread_detach", symbols);
+
+	if (!pthread_create_vaddr || !pthread_detach_vaddr) {
+		err = -1;
+		goto free_symbols;
+	}
+
+	printf("[+] resolved pthread_create(): %lx\n", pthread_create_vaddr);
+	printf("[+] resolved pthread_detach(): %lx\n", pthread_detach_vaddr);
+
+free_symbols:
+	free_symbol_table(symbols);
+unmap:
+	unmap_remote_library(&libpthread);
+out:
+	return err;
+}
+
 static int inject_thread()
 {
 	int err;
@@ -153,6 +200,10 @@ static int inject_thread()
 	printf("[+] attached\n");
 
 	err = resolve_libdl_symbols();
+	if (err)
+		goto detach;
+
+	err = resolve_libpthread_symbols();
 	if (err)
 		goto detach;
 
