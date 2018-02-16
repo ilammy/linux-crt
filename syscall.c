@@ -174,3 +174,18 @@ int remote_mprotect(pid_t pid, unsigned long syscall_insn_vaddr,
 
 	return ret;
 }
+
+int remote_munmap(pid_t pid, unsigned long syscall_insn_vaddr,
+		unsigned long addr, size_t len)
+{
+	long ret = perform_syscall(pid, syscall_insn_vaddr,
+		__NR_munmap, 2, (long) addr, (long) len);
+
+	if (ret < 0) {
+		fprintf(stderr, "[*] remote munmap() in %d failed: %s\n",
+			pid, strerror(-ret));
+		ret = -1;
+	}
+
+	return ret;
+}

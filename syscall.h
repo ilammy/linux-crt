@@ -66,4 +66,18 @@ unsigned long remote_mmap(pid_t pid, unsigned long syscall_insn_vaddr,
 int remote_mprotect(pid_t pid, unsigned long syscall_insn_vaddr,
 		unsigned long addr, size_t len, int prot);
 
+/**
+ * remote_munmap() - perform an munmap() system call in remote process
+ * @pid:                PID of the target process
+ * @syscall_insn_vaddr: virtual address of SYSCALL instruction
+ * @addr:               munmap argument: address of the map to remove
+ * @len:                munmap argument: length of the map to remove
+ *
+ * This function preserves the register state of the process.
+ *
+ * Returns: corresponding virtual address on success, or zero on error.
+ */
+int remote_munmap(pid_t pid, unsigned long syscall_insn_vaddr,
+		unsigned long addr, size_t len);
+
 #endif /* LINUX_CRT_SYSCALL_H */

@@ -63,6 +63,12 @@ static unsigned long pthread_detach_vaddr;
 
 static unsigned long syscall_ret_vaddr;
 
+static unsigned long shellcode_text_vaddr;
+static unsigned long shellcode_stack_vaddr;
+
+#define SHELLCODE_TEXT_SIZE  4096
+#define SHELLCODE_STACK_SIZE (1024 * 1024)
+
 static int inject_thread(void);
 
 int main(int argc, char *argv[])
@@ -219,6 +225,58 @@ out:
 	return err;
 }
 
+static int prepare_shellcode()
+{
+	int err = 0;
+
+	printf("[-] mapping memory pages for the shellcode...\n");
+
+	shellcode_text_vaddr =
+		remote_mmap(target, syscall_ret_vaddr, 0,
+			SHELLCODE_TEXT_SIZE,
+			PROT_READ | PROT_WRITE | PROT_EXEC,
+			MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+
+	shellcode_stack_vaddr =
+		remote_mmap(target, syscall_ret_vaddr, 0,
+			SHELLCODE_STACK_SIZE,
+			PROT_READ | PROT_WRITE,
+			MAP_ANONYMOUS | MAP_PRIVATE | MAP_STACK |
+			MAP_GROWSDOWN, -1, 0);
+
+	if (!shellcode_text_vaddr || !shellcode_stack_vaddr)
+		goto error_unmap_shellcode;
+
+	printf("[+] mapped a page for shellcode text at %lx\n",
+		shellcode_text_vaddr);
+	printf("[+] mapped pages for shellcode stack at %lx\n",
+		shellcode_stack_vaddr);
+
+	printf("[-] making shellcode text read-only...\n");
+
+	err = remote_mprotect(target, syscall_ret_vaddr,
+		shellcode_text_vaddr, SHELLCODE_TEXT_SIZE,
+		PROT_READ | PROT_EXEC);
+
+	if (err)
+		goto error_unmap_shellcode;
+
+	printf("[+] shellcode ready\n");
+
+	return 0;
+
+error_unmap_shellcode:
+	if (shellcode_text_vaddr)
+		remote_munmap(target, syscall_ret_vaddr,
+			shellcode_text_vaddr, SHELLCODE_TEXT_SIZE);
+
+	if (shellcode_stack_vaddr)
+		remote_munmap(target, syscall_ret_vaddr,
+			shellcode_stack_vaddr, SHELLCODE_STACK_SIZE);
+
+	return -1;
+}
+
 static int inject_thread()
 {
 	int err;
@@ -243,39 +301,9 @@ static int inject_thread()
 	if (err)
 		goto detach;
 
-	struct user_regs_struct registers;
-
-	printf("[-] saving the registers before injection...\n");
-
-	err = get_registers(target, &registers);
+	err = prepare_shellcode();
 	if (err)
 		goto detach;
-
-	printf("[-] mapping a memory page for the shellcode...\n");
-
-	unsigned long shellcode_vaddr =
-		remote_mmap(target, syscall_ret_vaddr, 0, 4096,
-			PROT_READ | PROT_WRITE | PROT_EXEC,
-			MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
-
-	if (!shellcode_vaddr)
-		goto restore_regs;
-
-	printf("[+] mapped a page for shellcode at %lx\n", shellcode_vaddr);
-
-	printf("[-] removing write access to shellcode...\n");
-
-	err = remote_mprotect(target, syscall_ret_vaddr, shellcode_vaddr, 4096,
-		PROT_READ | PROT_EXEC);
-	if (err < 0)
-		goto restore_regs;
-
-	printf("[+] shellcode ready\n");
-
-restore_regs:
-	printf("[-] restoring the registers after injection...\n");
-
-	set_registers(target, &registers);
 
 detach:
 	printf("[-] detaching from process %d...\n", target);
