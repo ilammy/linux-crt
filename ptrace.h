@@ -69,14 +69,14 @@ int set_registers(pid_t pid, struct user_regs_struct *registers);
 
 /**
  * wait_for_syscall_completion() - exactly what it says on the tin
- * @pid: PID of the process to wait for
+ * @pid:     PID of the process to wait for
+ * @syscall: number of the expected syscall
  *
- * The target process must be stopped and being debugged. You should probably
- * arrange for a system call to be performed in the nearest time (or we'll
- * wait for the first one).
+ * The target process must be stopped and being debugged. You should
+ * arrange for the specified system call to be performed soon.
  *
  * Returns: zero on success, -1 on errors.
  */
-int wait_for_syscall_completion(pid_t pid);
+int wait_for_syscall_completion(pid_t pid, unsigned long syscall);
 
 #endif /* LINUX_CRT_PTRACE_H */

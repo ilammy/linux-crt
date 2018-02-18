@@ -80,4 +80,18 @@ int remote_mprotect(pid_t pid, unsigned long syscall_insn_vaddr,
 int remote_munmap(pid_t pid, unsigned long syscall_insn_vaddr,
 		unsigned long addr, size_t len);
 
+/**
+ * remote_clone() - perform a clone() system call in remote process
+ * @pid:                PID of the target process
+ * @syscall_insn_vaddr: virtual address of SYSCALL instruction
+ * @flags:              clone argument: flags
+ * @stack_vaddr:        clone argument: virtual address of the stack
+ *
+ * This function preserves the register state of the process.
+ *
+ * Returns: TID of the newly created process, or zero in case of error.
+ */
+pid_t remote_clone(pid_t pid, unsigned long syscall_insn_vaddr,
+		unsigned long flags, unsigned long stack_vaddr);
+
 #endif /* LINUX_CRT_SYSCALL_H */

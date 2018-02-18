@@ -126,7 +126,7 @@ static long perform_syscall(pid_t pid, unsigned long syscall_insn_vaddr,
 	if (err)
 		return err;
 
-	err = wait_for_syscall_completion(pid);
+	err = wait_for_syscall_completion(pid, syscall_number);
 	if (err)
 		return err;
 
@@ -185,6 +185,21 @@ int remote_munmap(pid_t pid, unsigned long syscall_insn_vaddr,
 		fprintf(stderr, "[*] remote munmap() in %d failed: %s\n",
 			pid, strerror(-ret));
 		ret = -1;
+	}
+
+	return ret;
+}
+
+pid_t remote_clone(pid_t pid, unsigned long syscall_insn_vaddr,
+		unsigned long flags, unsigned long stack_vaddr)
+{
+	long ret = perform_syscall(pid, syscall_insn_vaddr,
+		__NR_clone, 2, (long) flags, (long) stack_vaddr);
+
+	if (ret < 0) {
+		fprintf(stderr, "[*] remote clone() in %d failed: %s\n",
+			pid, strerror(-ret));
+		ret = 0;
 	}
 
 	return ret;

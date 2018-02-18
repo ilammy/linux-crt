@@ -25,7 +25,64 @@
 #include <string.h>
 
 #include <sys/ptrace.h>
+#include <sys/syscall.h>
 #include <sys/wait.h>
+
+static int wait_for_process_stop(pid_t pid, int expected_signal)
+{
+	for (;;) {
+		int status = 0;
+
+		if (waitpid(pid, &status, 0) < 0) {
+			fprintf(stderr, "[!] failed to wait for PID %d: %s\n",
+				pid, strerror(errno));
+			return -1;
+		}
+
+		if (WIFSIGNALED(status)) {
+			fprintf(stderr, "[!] PID %d killed by %s\n",
+				pid, strsignal(WTERMSIG(status)));
+			return -1;
+		}
+
+		if (WIFEXITED(status)) {
+			fprintf(stderr, "[!] PID %d exited with %d\n",
+				pid, WEXITSTATUS(status));
+			return -1;
+		}
+
+		if (WIFSTOPPED(status)) {
+			/*
+			 * Use right shift instead of WSTOPSIG() to catch
+			 * PTRACE_EVENTs which come as flags higher than
+			 * the lowest byte extracted by WSTOPSIG().
+			 */
+			int stop_signal = status >> 8;
+
+			if (stop_signal == expected_signal)
+				break;
+
+			/*
+			 * If this is not the signal we wanted then reinject
+			 * it back into the target process and wait again.
+			 */
+			if (ptrace(PTRACE_CONT, pid, 0, stop_signal) < 0) {
+				fprintf(stderr, "[!] failed to reinject %s (0x%04X) into %d: %s\n",
+					strsignal(stop_signal), stop_signal,
+					pid, strerror(errno));
+				return -1;
+			}
+
+			continue;
+		}
+
+		fprintf(stderr, "[!] unexpected waitpid() result: 0x%04X\n",
+			status);
+		return -1;
+	}
+
+	return 0;
+}
 
 int ptrace_attach(pid_t pid)
 {
@@ -42,45 +99,17 @@ int ptrace_attach(pid_t pid)
 	 * not by some other signal which may have arrived before us.
 	 * Also, by that time the process may be already dead and useless.
 	 */
-	for (;;) {
-		int status = 0;
-
-		if (waitpid(pid, &status, 0) < 0) {
-			fprintf(stderr, "[*] failed to wait for PID %d: %s\n",
-				pid, strerror(errno));
-			goto detach;
-		}
-
-		if (WIFSIGNALED(status) || WIFEXITED(status)) {
-			fprintf(stderr, "[*] PID %d is already dead\n", pid);
-			goto detach;
-		}
-
-		if (WIFSTOPPED(status))
-		{
-			int signal = WSTOPSIG(status);
-
-			if (signal == SIGSTOP)
-				break;
-
-			/*
-			 * If this is not the signal we wanted then reinject it
-			 * back into the target process and wait again.
-			 */
-			if (ptrace(PTRACE_CONT, pid, 0, signal) < 0) {
-				fprintf(stderr, "[*] failed to reinject signal to PID %d: %s\n",
-					pid, strerror(errno));
-				goto detach;
-			}
-		}
-	}
+	if (wait_for_process_stop(pid, SIGSTOP) < 0)
+		goto detach;
 
 	/*
 	 * While we're here, make it easier to trace system calls. With this
 	 * we will be able to distinguish between breakpoints and syscalls.
+	 * We will also be able to trace the newly created threads.
 	 */
-	if (ptrace(PTRACE_SETOPTIONS, pid, 0, PTRACE_O_TRACESYSGOOD) < 0) {
-		fprintf(stderr, "[*] failed to set TRACESYSGOOD on PID %d: %s\n",
+	unsigned long options = PTRACE_O_TRACESYSGOOD | PTRACE_O_TRACECLONE;
+	if (ptrace(PTRACE_SETOPTIONS, pid, 0, options) < 0) {
+		fprintf(stderr, "[*] failed to set options on PID %d: %s\n",
 			pid, strerror(errno));
 		goto detach;
 	}
@@ -134,53 +163,39 @@ static int wait_for_syscall_enter_exit_stop(pid_t pid)
 {
 	int err = 0;
 
-	if (ptrace(PTRACE_SYSCALL, pid, 0, 0) < 0) {
-		err = -errno;
+	err = ptrace(PTRACE_SYSCALL, pid, 0, 0);
+	if (err) {
 		fprintf(stderr, "[!] failed to wait for syscall by %d: %s\n",
 			pid, strerror(errno));
 		goto out;
 	}
 
-	for (;;) {
-		int status;
-
-		if (waitpid(pid, &status, 0) < 0) {
-			err = -errno;
-			fprintf(stderr, "[!] failed to wait for %d: %s\n",
-				pid, strerror(errno));
-			goto out;
-		}
-
-		if (WIFSIGNALED(status) || WIFEXITED(status)) {
-			err = -ECHILD;
-			fprintf(stderr, "[!] %d is already dead\n", pid);
-			goto out;
-		}
-
-		if (WIFSTOPPED(status)) {
-			int signal = WSTOPSIG(status);
-
-			if (signal == SIGTRAP | 0x80)
-				break;
-		}
-
-		/*
-		 * This never happens. PTRACE_SYSCALL stops only in the
-		 * following caseS:
-		 * - SIGKILL of the target process
-		 * - PTRACE_EVENT which we don't use
-		 * - SIGTRAP on syscall completion
-		 */
-		err = -EINVAL;
-		fprintf(stderr, "[*] unexpected result of waitpid: %d\n",
-			status);
+	err = wait_for_process_stop(pid, SIGTRAP | 0x80);
+	if (err)
 		goto out;
-	}
 out:
 	return err;
 }
 
-int wait_for_syscall_completion(pid_t pid)
+static int wait_for_clone_event(pid_t pid)
+{
+	int err = 0;
+
+	err = ptrace(PTRACE_CONT, pid, 0, 0);
+	if (err) {
+		fprintf(stderr, "[!] failed to resume %d: %s\n",
+			pid, strerror(errno));
+		goto out;
+	}
+
+	err = wait_for_process_stop(pid, SIGTRAP | (PTRACE_EVENT_CLONE << 8));
+	if (err)
+		goto out;
+out:
+	return err;
+}
+
+int wait_for_syscall_completion(pid_t pid, unsigned long syscall)
 {
 	int err;
 	/*
@@ -190,6 +205,16 @@ int wait_for_syscall_completion(pid_t pid)
 	err = wait_for_syscall_enter_exit_stop(pid);
 	if (err)
 		goto out;
+
+	/*
+	 * If we expect a clone() call then we'll need to wait for
+	 * the PTRACE_EVENT_CLONE during the system call invocation.
+	 */
+	if (syscall == __NR_clone) {
+		err = wait_for_clone_event(pid);
+		if (err)
+			goto out;
+	}
 
 	err = wait_for_syscall_enter_exit_stop(pid);
 out:
