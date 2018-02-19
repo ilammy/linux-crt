@@ -70,4 +70,18 @@ int map_remote_library(pid_t pid, const char *library_name,
  */
 void unmap_remote_library(struct library *library_map);
 
+/**
+ * write_remote_memory() - write remote process memory
+ * @pid:   PID of the remote process
+ * @vaddr: virtual address in the remote process
+ * @data:  local buffer to write
+ * @size:  size of the buffer to write
+ *
+ * The remote process must be traced and stopped for this to work.
+ *
+ * Returns: zero on success, negative value on error.
+ */
+int write_remote_memory(pid_t pid, unsigned long vaddr,
+		const void *data, size_t size);
+
 #endif /* LINUX_CRT_PROCFS_H */

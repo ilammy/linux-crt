@@ -24,8 +24,10 @@
 #include <string.h>
 
 #include "elf.h"
+#include "inject-thread.h"
 #include "procfs.h"
 #include "ptrace.h"
+#include "shell.h"
 #include "syscall.h"
 
 static const struct option long_options[] = {
@@ -51,23 +53,20 @@ static void usage(const char *name)
 	name);
 }
 
-static pid_t target;
-static char payload[256];
-static char entry[256];
+pid_t target;
+char payload[256];
+char entry[256];
 
-static unsigned long dlopen_vaddr;
-static unsigned long dlsym_vaddr;
+unsigned long dlopen_vaddr;
+unsigned long dlsym_vaddr;
 
-static unsigned long pthread_create_vaddr;
-static unsigned long pthread_detach_vaddr;
+unsigned long pthread_create_vaddr;
+unsigned long pthread_detach_vaddr;
 
-static unsigned long syscall_ret_vaddr;
+unsigned long syscall_ret_vaddr;
 
-static unsigned long shellcode_text_vaddr;
-static unsigned long shellcode_stack_vaddr;
-
-#define SHELLCODE_TEXT_SIZE  4096
-#define SHELLCODE_STACK_SIZE (1024 * 1024)
+unsigned long shellcode_text_vaddr;
+unsigned long shellcode_stack_vaddr;
 
 static int inject_thread(void);
 
@@ -251,6 +250,10 @@ static int prepare_shellcode()
 		shellcode_text_vaddr);
 	printf("[+] mapped pages for shellcode stack at %lx\n",
 		shellcode_stack_vaddr);
+
+	err = write_shellcode();
+	if (err)
+		goto error_unmap_shellcode;
 
 	printf("[-] making shellcode text read-only...\n");
 

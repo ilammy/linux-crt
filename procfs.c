@@ -288,3 +288,56 @@ void unmap_remote_library(struct library *library_map)
 	library_map->regions = NULL;
 	library_map->region_count = 0;
 }
+
+static int do_write_remote_memory(int fd, const void *data, size_t size)
+{
+	size_t remaining = size;
+
+	while (remaining > 0) {
+		ssize_t wrote = write(fd, data, remaining);
+
+		if (wrote < 0) {
+			fprintf(stderr, "[!] failed to write memory: %s\n",
+				strerror(errno));
+			return -1;
+		}
+
+		data += wrote;
+		remaining -= wrote;
+	}
+
+	return 0;
+}
+
+int write_remote_memory(pid_t pid, unsigned long vaddr,
+		const void *data, size_t size)
+{
+	int err = 0;
+	char path[32] = {0};
+
+	snprintf(path, sizeof(path), "/proc/%d/mem", pid);
+
+	int fd = open(path, O_WRONLY);
+	if (fd < 0) {
+		fprintf(stderr, "[*] failed to open %s: %s\n",
+			path, strerror(errno));
+		return -1;
+	}
+
+	if (lseek(fd, vaddr, SEEK_SET) < 0) {
+		err = -1;
+		fprintf(stderr, "[*] failed to seek to %ld: %s\n",
+			vaddr, strerror(errno));
+		goto error_close;
+	}
+
+	err = do_write_remote_memory(fd, data, size);
+
+error_close:
+	if (close(fd) < 0) {
+		fprintf(stderr, "[!] failed to close %s (%d): %s\n",
+			path, fd, strerror(errno));
+	}
+
+	return err;
+}
