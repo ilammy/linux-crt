@@ -110,4 +110,14 @@ int wait_for_process_exit(pid_t pid);
  */
 int stop_thread(pid_t pid);
 
+/**
+ * clear_ptrace_options() - reset ptrace options for a traced process
+ * @pid: PID of the process to reset
+ *
+ * This clears all ptrace options set for the thread.
+ *
+ * Returns: zero on success, -1 on errors.
+ */
+int clear_ptrace_options(pid_t pid);
+
 #endif /* LINUX_CRT_PTRACE_H */

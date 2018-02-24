@@ -273,3 +273,14 @@ int stop_thread(pid_t pid)
 
 	return 0;
 }
+
+int clear_ptrace_options(pid_t pid)
+{
+	if (ptrace(PTRACE_SETOPTIONS, pid, 0, 0) < 0) {
+		fprintf(stderr, "[*] failed to clear options on %d: %s\n",
+			pid, strerror(errno));
+		return -1;
+	}
+
+	return 0;
+}

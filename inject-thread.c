@@ -312,6 +312,21 @@ static int spawn_shell_thread()
 	return 0;
 }
 
+static int disable_clone_tracing_in_shell_thread()
+{
+	int err = 0;
+
+	printf("[-] disabling tracing of suspended thread...\n");
+
+	err = clear_ptrace_options(shell_tid);
+	if (err)
+		goto out;
+
+	printf("[+] helper thread ready\n");
+out:
+	return err;
+}
+
 static int detach_from_target()
 {
 	printf("[-] detaching from process %d...\n", target);
@@ -390,6 +405,10 @@ static int inject_thread()
 		goto detach;
 
 	err = spawn_shell_thread();
+	if (err)
+		goto detach;
+
+	err = disable_clone_tracing_in_shell_thread();
 	if (err)
 		goto detach;
 
