@@ -344,7 +344,14 @@ static int wait_for_shell_thread_exit()
 {
 	printf("[-] waiting for helper to exit...\n");
 
-	return wait_for_process_exit(shell_tid);
+	int exit_code = wait_for_process_exit(shell_tid);
+
+	if (exit_code < 0)
+		return -1;
+
+	printf("[+] shell thread exited with %d\n", exit_code);
+
+	return 0;
 }
 
 static int stop_target_thread()

