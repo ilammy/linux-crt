@@ -21,6 +21,7 @@
 #include "ptrace.h"
 
 #include <errno.h>
+#include <signal.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -137,6 +138,17 @@ int ptrace_detach(pid_t pid)
 	return 0;
 }
 
+int resume_thread(pid_t pid)
+{
+	if (ptrace(PTRACE_CONT, pid, 0, 0) < 0) {
+		fprintf(stderr, "[*] failed to resume PID %d: %s\n",
+			pid, strerror(errno));
+		return -1;
+	}
+
+	return 0;
+}
+
 int get_registers(pid_t pid, struct user_regs_struct *registers)
 {
 	int err = 0;
@@ -219,4 +231,45 @@ int wait_for_syscall_completion(pid_t pid, unsigned long syscall)
 	err = wait_for_syscall_enter_exit_stop(pid);
 out:
 	return err;
+}
+
+int wait_for_process_exit(pid_t pid)
+{
+	int status = 0;
+
+	if (waitpid(pid, &status, 0) < 0) {
+		fprintf(stderr, "[*] failed to wait for PID %d: %s\n",
+			pid, strerror(errno));
+		return -1;
+	}
+
+	if (!WIFEXITED(status)) {
+		fprintf(stderr, "[*] unexpected wait result: 0x%04X\n",
+			status);
+		return -1;
+	}
+
+	return WEXITSTATUS(status);
+}
+
+int stop_thread(pid_t pid)
+{
+	int err = 0;
+
+	/*
+	 * First send the target thread a signal to stop.
+	 */
+	if (kill(pid, SIGSTOP) < 0) {
+		fprintf(stderr, "[*] failed to stop PID %d: %s\n",
+			pid, strerror(errno));
+		return -1;
+	}
+
+	/*
+	 * Then wait for it to actually stop due to that signal.
+	 */
+	if (wait_for_process_stop(pid, SIGSTOP) < 0)
+		return -1;
+
+	return 0;
 }

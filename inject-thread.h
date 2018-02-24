@@ -24,6 +24,7 @@
 #include <sys/types.h>
 
 extern pid_t target;
+extern pid_t shell_tid;
 extern char payload[256];
 extern char entry[256];
 

@@ -19,6 +19,7 @@
  */
 
 #include <getopt.h>
+#include <sched.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -54,6 +55,7 @@ static void usage(const char *name)
 }
 
 pid_t target;
+pid_t shell_tid;
 char payload[256];
 char entry[256];
 
@@ -280,6 +282,78 @@ error_unmap_shellcode:
 	return -1;
 }
 
+static int unmap_shellcode()
+{
+	int err = 0;
+
+	err |= remote_munmap(target, syscall_ret_vaddr,
+		shellcode_text_vaddr, SHELLCODE_TEXT_SIZE);
+
+	err |= remote_munmap(target, syscall_ret_vaddr,
+		shellcode_stack_vaddr, SHELLCODE_STACK_SIZE);
+
+	return err;
+}
+
+static int spawn_shell_thread()
+{
+	printf("[-] spawning a helper thread\n");
+
+	shell_tid = remote_clone(target, syscall_ret_vaddr,
+		CLONE_FILES | CLONE_FS | CLONE_IO | CLONE_SIGHAND |
+		CLONE_SYSVSEM | CLONE_THREAD | CLONE_VM,
+		shellcode_stack_vaddr + SHELLCODE_STACK_SIZE - 8);
+
+	if (!shell_tid)
+		return -1;
+
+	printf("[+] new suspended thread: %d\n", shell_tid);
+
+	return 0;
+}
+
+static int detach_from_target()
+{
+	printf("[-] detaching from process %d...\n", target);
+
+	return ptrace_detach(target);
+}
+
+static int detach_from_shell_thread()
+{
+	printf("[-] detaching from helper %d...\n", shell_tid);
+
+	return ptrace_detach(shell_tid);
+}
+
+static int resume_target_thread()
+{
+	printf("[-] resuming target...\n");
+
+	return resume_thread(target);
+}
+
+static int resume_shell_thread()
+{
+	printf("[-] resuming helper thread...\n");
+
+	return resume_thread(shell_tid);
+}
+
+static int wait_for_shell_thread_exit()
+{
+	printf("[-] waiting for helper to exit...\n");
+
+	return wait_for_process_exit(shell_tid);
+}
+
+static int stop_target_thread()
+{
+	printf("[-] stopping target thread...\n");
+
+	return stop_thread(target);
+}
+
 static int inject_thread()
 {
 	int err;
@@ -308,12 +382,43 @@ static int inject_thread()
 	if (err)
 		goto detach;
 
-detach:
-	printf("[-] detaching from process %d...\n", target);
+	err = spawn_shell_thread();
+	if (err)
+		goto detach;
 
-	err = ptrace_detach(target);
+	err = resume_target_thread();
+	if (err)
+		goto detach;
 
+	err = resume_shell_thread();
+	if (err)
+		goto detach;
+
+	err = wait_for_shell_thread_exit();
+	if (err)
+		goto detach;
+
+	err = stop_target_thread();
+	if (err)
+		goto detach;
+
+	unmap_shellcode();
+
+	err = detach_from_target();
+	if (err)
+		goto detach_shell;
+	
 	printf("[+] we're done\n");
+
+	return 0;
+
+detach:
+	ptrace_detach(target);
 out:
-	return err ? 2 : 0;
+	return err;
+
+detach_shell:
+	ptrace_detach(shell_tid);
+
+	return err;
 }

@@ -46,6 +46,16 @@ int ptrace_attach(pid_t pid);
 int ptrace_detach(pid_t pid);
 
 /**
+ * resume_thread() - resume a suspended thread
+ * @pid: PID of the process to resume
+ *
+ * The target process must be the previously attached one and not running.
+ *
+ * Returns: zero on success, -1 on errors.
+ */
+int resume_thread(pid_t pid);
+
+/**
  * get_registers() - read process registers
  * @pid:       PID of the process to inspect
  * @registers: registers will be placed here
@@ -78,5 +88,26 @@ int set_registers(pid_t pid, struct user_regs_struct *registers);
  * Returns: zero on success, -1 on errors.
  */
 int wait_for_syscall_completion(pid_t pid, unsigned long syscall);
+
+/**
+ * wait_for_process_exit() - wait for a thread to exit
+ * @pid: PID of the process to wait for
+ *
+ * The target process must be attached and running.
+ *
+ * Returns: non-negative exit status on success, -1 on errors.
+ */
+int wait_for_process_exit(pid_t pid);
+
+/**
+ * stop_thread() - signal a thread to stop
+ * @pid: PID of the process to stop
+ *
+ * The target process is not required to be debugged for this to work, but
+ * it probably should be debugged ;)
+ *
+ * Returns: zero on success, -1 on errors.
+ */
+int stop_thread(pid_t pid);
 
 #endif /* LINUX_CRT_PTRACE_H */
