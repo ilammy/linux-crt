@@ -20,7 +20,7 @@ $(target): $(objects) shell_text.o
 	$(LD) -o $@ $^
 
 libpayload.so: payload.c
-	$(CC) $(CFLAGS) -shared -o $@ $<
+	$(CC) $(CFLAGS) $(shell pkg-config --cflags --libs gtk+-3.0) -shared -o $@ $<
 
 $(objects): %.o: %.c
 	$(CC) $(CFLAGS) -o $@ -c $<
