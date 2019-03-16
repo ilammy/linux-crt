@@ -14,6 +14,15 @@ Limitations:
   the target process is dumpable, or you have CAP_SYS_PTRACE)
 * unsafe when applied to single-threaded applications
 
+More materials
+==============
+
+`Talk slide deck`_ and `detailed description`_ (in Russian).
+
+.. _`Talk slide deck`: https://docs.google.com/presentation/d/10JmeisHsug-7XCB5Ym1HPYoeKLU_r9MOSNNPGWAteKg/edit?usp=sharing
+.. _`detailed description`: https://docs.google.com/document/d/1iwEfmqPKAeD0pA4GLzdNgwSXuj5q44dxWeSxdZQCXww/edit?usp=sharing
+
+
 License
 =======
 
