@@ -39,7 +39,7 @@ static bool read_proc_line(const char *line, const char *library,
 	char execute = 0;
 	int path_offset = 0;
 
-	sscanf(line, "%lx-%lx %c%c%c%*c %*lx %*x:%*x %*d %n",
+	sscanf(line, "%lx-%lx %c%c%c%*c %*x %*x:%*x %*d %n",
 		&vaddr_low, &vaddr_high, &read, &write, &execute,
 		&path_offset);
 

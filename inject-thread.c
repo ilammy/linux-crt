@@ -119,7 +119,7 @@ static int resolve_libdl_symbols()
 	if (err < 0)
 		goto out;
 
-	printf("[+] mapped %d regions\n", libdl.region_count);
+	printf("[+] mapped %zu regions\n", libdl.region_count);
 
 	printf("[-] locating dynamic symbol table of libdl...\n");
 
@@ -163,7 +163,7 @@ static int resolve_libpthread_symbols()
 	if (err < 0)
 		goto out;
 
-	printf("[+] mapped %d regions\n", libpthread.region_count);
+	printf("[+] mapped %zu regions\n", libpthread.region_count);
 
 	printf("[-] locating dynamic symbol table of libpthread...\n");
 
@@ -207,7 +207,7 @@ static int locate_syscall_trampoline()
 	if (err < 0)
 		goto out;
 
-	printf("[+] mapped %d regions\n", libc.region_count);
+	printf("[+] mapped %zu regions\n", libc.region_count);
 
 	printf("[-] locating SYSCALL instruction in libc...\n");
 
