@@ -72,7 +72,7 @@ shellcode_start:
 	 *
 	 * err = pthread_create(&thread, NULL, entry, NULL);
 	 */
-	sub	$8,%rsp
+	sub	$16,%rsp
 	mov	%rsp,%rdi
 	xor	%rsi,%rsi
 	mov	%rax,%rdx
@@ -90,7 +90,7 @@ shellcode_start:
 	 * err = pthread_detach(thread);
 	 */
 	mov	(%rsp),%rdi
-	add	$8,%rsp
+	add	$16,%rsp
 	mov	shellcode_address_pthread_detach(%rip),%rax
 	callq	*%rax
 
