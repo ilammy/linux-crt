@@ -233,6 +233,11 @@ out:
 	return err;
 }
 
+int ignore_thread_stop(pid_t pid)
+{
+	return wait_for_process_stop(pid, SIGSTOP);
+}
+
 int wait_for_process_exit(pid_t pid)
 {
 	int status = 0;

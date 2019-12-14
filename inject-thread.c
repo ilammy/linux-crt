@@ -355,6 +355,13 @@ static int resume_shell_thread()
 	return resume_thread(shell_tid);
 }
 
+static int wait_for_shell_thread_enter()
+{
+	printf("[-] waiting for helper thread start...\n");
+
+	return ignore_thread_stop(shell_tid);
+}
+
 static int wait_for_shell_thread_exit()
 {
 	printf("[-] waiting for helper to exit...\n");
@@ -405,6 +412,10 @@ static int inject_thread()
 		goto detach;
 
 	err = spawn_shell_thread();
+	if (err)
+		goto detach;
+
+	err = wait_for_shell_thread_enter();
 	if (err)
 		goto detach;
 

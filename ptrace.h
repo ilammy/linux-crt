@@ -100,6 +100,17 @@ int wait_for_syscall_completion(pid_t pid, unsigned long syscall);
 int wait_for_process_exit(pid_t pid);
 
 /**
+ * ignore_thread_stop() - consumes a SIGSTOP signal
+ * @pid: PID of the newly spawned thread
+ *
+ * Newly cleated and attached threads get SIGSTOP sent to them. This call
+ * consumes the signal while leaving the thread in trace-stopped state.
+ *
+ * Returns: zero on success, -1 on errors.
+ */
+int ignore_thread_stop(pid_t pid);
+
+/**
  * stop_thread() - signal a thread to stop
  * @pid: PID of the process to stop
  *
