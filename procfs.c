@@ -28,6 +28,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/mman.h>
+#include <sys/uio.h>
 
 static bool read_proc_line(const char *line, const char *library,
 		struct memory_region *region)
@@ -134,34 +135,7 @@ static int read_mapping(pid_t pid, const char *library_name,
  * Thus we have to malloc() some memory buffer and simply read the file.
  */
 
-static int read_region(int fd, off_t offset, void *buffer, size_t length)
-{
-	if (lseek(fd, offset, SEEK_SET) < 0) {
-		fprintf(stderr, "[*] failed to lseek() memory: %s\n",
-			strerror(errno));
-		return -1;
-	}
-
-	size_t remaining = length;
-	char *ptr = buffer;
-
-	while (remaining > 0) {
-		ssize_t count = read(fd, ptr, remaining);
-
-		if (count < 0) {
-			fprintf(stderr, "[*] failed to read() memory: %s\n",
-				strerror(errno));
-			return -1;
-		}
-
-		remaining -= count;
-		ptr += count;
-	}
-
-	return 0;
-}
-
-static int map_region(int fd, struct memory_region *region)
+static int map_region(struct memory_region *region)
 {
 	size_t length = region->vaddr_high - region->vaddr_low;
 	off_t offset = region->vaddr_low;
@@ -179,11 +153,6 @@ static int map_region(int fd, struct memory_region *region)
 		region->executable ? 'x' : '-',
 		region->vaddr_low, region->vaddr_high);
 
-	if (read_region(fd, offset, buffer, length) < 0) {
-		free(buffer);
-		return -1;
-	}
-
 	region->content = buffer;
 
 	return 0;
@@ -195,20 +164,48 @@ static void unmap_region(struct memory_region *region)
 	region->content = NULL;
 }
 
-static int do_map_regions(int fd, struct library *mapping)
+static int do_map_regions(pid_t pid, struct library *mapping,
+		struct iovec *local_iov, struct iovec *remote_iov)
 {
 	size_t mapped;
+	size_t read_bytes = 0;
+	size_t total_bytes = 0;
 
 	for (mapped = 0; mapped < mapping->region_count; mapped++) {
-		if (!mapping->regions[mapped].readable) {
+		struct memory_region *current = &mapping->regions[mapped];
+
+		if (!current->readable) {
 			printf("[.]  unreadable region at %lx-%lx\n",
-				mapping->regions[mapped].vaddr_low,
-				mapping->regions[mapped].vaddr_high);
+				current->vaddr_low, current->vaddr_high);
 			continue;
 		}
 
-		if (map_region(fd, &mapping->regions[mapped]) < 0)
+		if (map_region(current) < 0)
 			goto error_unmap;
+
+		local_iov[mapped].iov_base = (void*)current->content;
+		local_iov[mapped].iov_len = current->vaddr_high - current->vaddr_low;
+		remote_iov[mapped].iov_base = (void*)current->vaddr_low;
+		remote_iov[mapped].iov_len = current->vaddr_high - current->vaddr_low;
+		total_bytes += current->vaddr_high - current->vaddr_low;
+	}
+
+	read_bytes = process_vm_readv(pid, local_iov, mapping->region_count,
+		remote_iov, mapping->region_count, 0);
+
+	if (read_bytes < 0) {
+		fprintf(stderr, "[!] failed to read remote image: %s\n",
+			strerror(errno));
+		goto error_unmap;
+	}
+	if (read_bytes != total_bytes) {
+		/*
+		 * We could count the bytes, adjust local_iov and remote_iov, and
+		 * continue reading but I'm too lazy for that. Treat it as an error.
+		 */
+		fprintf(stderr, "[*] partial read of remote image: (%zu/%zu bytes)\n",
+			read_bytes, total_bytes);
+		goto error_unmap;
 	}
 
 	return 0;
@@ -222,23 +219,23 @@ error_unmap:
 
 static int map_regions(pid_t pid, struct library *mapping)
 {
-	char path[32] = {0};
+	int res = -1;
+	struct iovec *local_iov = NULL;
+	struct iovec *remote_iov = NULL;
 
-	snprintf(path, sizeof(path), "/proc/%d/mem", pid);
-
-	int fd = open(path, O_RDONLY);
-	if (fd < 0) {
-		fprintf(stderr, "[*] failed to open %s: %s\n",
-			path, strerror(errno));
-		return -1;
+	local_iov = calloc(mapping->region_count, sizeof(*local_iov));
+	remote_iov = calloc(mapping->region_count, sizeof(*remote_iov));
+	if (!local_iov || !remote_iov) {
+		fprintf(stderr, "[*] failed to allocate %zu iovecs\n",
+			mapping->region_count);
+		goto error;
 	}
 
-	int res = do_map_regions(fd, mapping);
+	res = do_map_regions(pid, mapping, local_iov, remote_iov);
 
-	if (close(fd) < 0) {
-		fprintf(stderr, "[!] failed to close %s (%d): %s\n",
-			path, fd, strerror(errno));
-	}
+error:
+	free(local_iov);
+	free(remote_iov);
 
 	return res;
 }
